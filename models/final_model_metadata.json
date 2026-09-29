@@ -1,0 +1,20 @@
+{
+  "selected_model": "Random Forest",
+  "selection_rule": "Lowest MAE on unseen group-aware test split",
+  "reference_year": 2026,
+  "test_metrics": {
+    "MAE_VND": 82321134.599913,
+    "MAE_million_VND": 82.321134599913,
+    "RMSE_VND": 322040883.4676104,
+    "RMSE_million_VND": 322.04088346761034,
+    "R2": 0.9494642668144372,
+    "RMSLE": 0.1419898761307876,
+    "Train_seconds": 1.1463877769999726
+  },
+  "price_tier_thresholds_vnd": {
+    "q25": 355000000.0,
+    "q50": 559000000.0,
+    "q75": 999000000.0,
+    "q90": 2199000000.0
+  }
+}

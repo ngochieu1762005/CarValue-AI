@@ -1,0 +1,4 @@
+dataset,rows,median_price_million,mean_price_million
+all,23187,560.0,993.3156941389572
+train,18533,559.0,983.0909189014191
+test,4654,560.0,1034.0324452084228

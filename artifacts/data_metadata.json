@@ -1,0 +1,41 @@
+{
+  "raw_rows": 23187,
+  "model_rows": 23187,
+  "reference_year": 2026,
+  "recovered_price_rows": 3911,
+  "remaining_missing_target": 0,
+  "unique_vehicle_signatures": 18572,
+  "rows_in_repeated_groups": 7600,
+  "features": [
+    "brand",
+    "model",
+    "origin",
+    "body_type",
+    "transmission",
+    "fuel_type",
+    "exterior_color",
+    "drivetrain",
+    "car_age",
+    "mileage_km",
+    "mileage_zero_flag",
+    "engine_size_l",
+    "seats"
+  ],
+  "categorical_features": [
+    "brand",
+    "model",
+    "origin",
+    "body_type",
+    "transmission",
+    "fuel_type",
+    "exterior_color",
+    "drivetrain"
+  ],
+  "numeric_features": [
+    "car_age",
+    "mileage_km",
+    "mileage_zero_flag",
+    "engine_size_l",
+    "seats"
+  ]
+}
