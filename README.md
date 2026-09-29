@@ -5,6 +5,57 @@ This folder continues the supplied EDA and completes the modeling/evaluation/dem
 ## Project target
 Predict **online asking price (`price_vnd`)**, not the final negotiated transaction price.
 
+
+## Model performance
+
+> **Important:** this is a **regression** project, so classification **accuracy is not an appropriate metric**. Model quality is evaluated with **MAE, RMSE, R², and RMSLE** on an **unseen group-aware test set**.
+
+### Final model
+
+The selected production model is **Random Forest**, chosen by the **lowest MAE on the unseen grouped test split**.
+
+| Metric | Result | Interpretation |
+|---|---:|---|
+| **MAE** | **68.26 million VND** | Average absolute prediction error is about 68.3M VND |
+| **RMSE** | **202.18 million VND** | Penalizes large pricing errors more strongly than MAE |
+| **R²** | **0.9751** | Explains about **97.51% of price variance** in the grouped test set |
+| **RMSLE** | **0.1372** | Measures relative error on the log-price scale; lower is better |
+| Test rows | **4,595** | Held-out observations not used to fit the model |
+| Train rows | **18,591** | Training observations after the conservative target-quality rule |
+
+### Model comparison
+
+| Model | MAE (M VND) ↓ | RMSE (M VND) ↓ | R² ↑ | RMSLE ↓ |
+|---|---:|---:|---:|---:|
+| **Random Forest** | **68.26** | **202.18** | **0.9751** | **0.1372** |
+| XGBoost | 77.24 | 247.48 | 0.9627 | 0.1376 |
+| CatBoost | 91.56 | 266.36 | 0.9568 | 0.1374 |
+| Ridge Regression | 141.56 | 456.69 | 0.8729 | 0.2075 |
+| Median Baseline | 628.58 | 1,343.91 | -0.1009 | 0.9065 |
+
+![Model comparison by MAE](figures/model_comparison_mae.png)
+
+### Error by price segment
+
+The model is substantially more accurate for mainstream vehicles than for premium vehicles, where prices are more dispersed and extreme values are more common.
+
+| Price tier | Test rows | MAE (M VND) |
+|---|---:|---:|
+| Entry | 1,201 | 23.81 |
+| Lower-mid | 1,151 | 28.50 |
+| Mid | 1,131 | 43.28 |
+| Upper | 676 | 101.34 |
+| Premium | 436 | 309.19 |
+
+For several major brands, MAE is much lower than the overall 68.26M VND figure; for example, **VinFast ≈ 28.44M**, **Hyundai ≈ 27.82M**, **Kia ≈ 29.25M**, and **Toyota ≈ 55.67M** on the grouped test set. Luxury brands show larger absolute errors because their price ranges are much wider.
+
+### How to read these numbers
+
+- **Do not call R² “accuracy.”** For regression, R² measures how much variance in asking price is explained by the model; it is not the percentage of predictions that are exactly correct.
+- **MAE is the easiest business metric to interpret:** an overall MAE of 68.26M VND means the prediction differs from the observed asking price by about 68.26M VND on average in the held-out grouped test set.
+- **RMSE is higher than MAE** because a smaller number of very large errors, especially premium vehicles, are penalized strongly.
+- These metrics describe **online asking-price prediction on this dataset**. They do **not** measure final negotiated transaction prices.
+
 ## Folder structure
 
 ```text
@@ -62,13 +113,7 @@ train median:    ~239.5M VND
 reference n:     98
 ```
 
-After the conservative modeling-data repair, the selected Random Forest test metrics are approximately:
-
-```text
-MAE  = 68.26 million VND
-RMSE = 202.18 million VND
-R²   = 0.9751
-```
+After the conservative modeling-data repair, **Random Forest remains the selected final model**. See the **Model performance** section above for the full grouped-test metrics and model comparison.
 
 ## Install
 
