@@ -176,6 +176,12 @@ def clean_raw_dataset(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
     clean["fuel_type"] = engine_info.apply(lambda x: x[0])
     clean["engine_size_l"] = engine_info.apply(lambda x: x[1])
 
+    # Electric listings occasionally contain malformed strings such as
+    # "Điện 6.0 L". Engine displacement is not meaningful for an EV, so
+    # always keep it missing rather than letting that parsing noise reach the model.
+    electric_mask = clean["fuel_type"].astype(str).str.strip().str.casefold().eq("điện".casefold())
+    clean.loc[electric_mask, "engine_size_l"] = np.nan
+
     for c in ["transmission", "drivetrain"]:
         clean[c] = clean[c].replace("-", np.nan)
 
@@ -191,7 +197,21 @@ def clean_raw_dataset(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
     sig_counts = clean["vehicle_signature"].value_counts()
     clean["signature_group_size"] = clean["vehicle_signature"].map(sig_counts)
 
-    clean["target_valid_flag"] = (clean["price_vnd"].notna() & (clean["price_vnd"] > 0)).astype(int)
+    # Flag extreme within-model-year target anomalies. This is deliberately
+    # conservative: only groups with >=4 listings are checked, and a row is
+    # flagged only when its price is below 1/4 or above 4x the group median.
+    # The raw/repaired row is retained for audit, but flagged rows are excluded
+    # from supervised model training.
+    grp = clean.groupby(["brand", "model", "year"], dropna=False)["price_vnd"].transform("median")
+    grp_n = clean.groupby(["brand", "model", "year"], dropna=False)["price_vnd"].transform("count")
+    price_ratio = clean["price_vnd"] / grp.replace(0, np.nan)
+    clean["price_outlier_flag"] = (
+        (grp_n >= 4) & ((price_ratio < 0.25) | (price_ratio > 4.0))
+    ).fillna(False).astype(int)
+
+    clean["target_valid_flag"] = (
+        clean["price_vnd"].notna() & (clean["price_vnd"] > 0) & clean["price_outlier_flag"].eq(0)
+    ).astype(int)
     clean["market_segment"] = np.where(
         clean["body_type"].eq("Truck"), "Commercial/Truck", "Passenger/Light vehicle"
     )
@@ -229,7 +249,7 @@ def ensure_modeling_artifacts(project_root: Path, force: bool = False) -> Tuple[
 
     raw = pd.read_csv(raw_path)
     clean, reference_year = clean_raw_dataset(raw)
-    model_df = clean[(clean[TARGET].notna()) & (clean[TARGET] > 0)].copy()
+    model_df = clean[clean["target_valid_flag"].eq(1)].copy()
     model_df = create_group_split(model_df)
 
     clean.to_csv(repaired_path, index=False, encoding="utf-8-sig")
@@ -241,6 +261,7 @@ def ensure_modeling_artifacts(project_root: Path, force: bool = False) -> Tuple[
         "reference_year": int(reference_year),
         "recovered_price_rows": int(clean["price_recovered_flag"].sum()),
         "remaining_missing_target": int(clean[TARGET].isna().sum()),
+        "price_outlier_rows_excluded_from_modeling": int(clean["price_outlier_flag"].sum()),
         "unique_vehicle_signatures": int(clean["vehicle_signature"].nunique()),
         "rows_in_repeated_groups": int((clean["signature_group_size"] > 1).sum()),
         "features": FEATURES,
@@ -479,6 +500,82 @@ def make_user_input(
         "drivetrain": drivetrain,
     }
     return pd.DataFrame([row], columns=FEATURES)
+
+
+def compatibility_subset(
+    model_df: pd.DataFrame,
+    brand: str,
+    model: str,
+    year: Optional[int] = None,
+    filters: Optional[Dict[str, object]] = None,
+) -> pd.DataFrame:
+    """Return observed rows compatible with a brand/model/year and optional selections."""
+    df = model_df[(model_df["brand"].astype(str) == str(brand)) & (model_df["model"].astype(str) == str(model))].copy()
+    if year is not None:
+        df = df[pd.to_numeric(df["year"], errors="coerce").eq(float(year))]
+    for col, value in (filters or {}).items():
+        if col not in df.columns or value is None or (isinstance(value, float) and np.isnan(value)):
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            df = df[pd.to_numeric(df[col], errors="coerce").eq(float(value))]
+        else:
+            df = df[df[col].astype(str).eq(str(value))]
+    return df
+
+
+def compatible_values(df: pd.DataFrame, col: str) -> List:
+    """Unique non-missing values in a deterministic order for the web form."""
+    if col not in df.columns:
+        return []
+    s = df[col].dropna()
+    if s.empty:
+        return []
+    if pd.api.types.is_numeric_dtype(s):
+        vals = sorted(pd.to_numeric(s, errors="coerce").dropna().unique().tolist())
+        return [float(v) for v in vals]
+    return sorted(s.astype(str).unique().tolist())
+
+
+def market_reference(
+    model_df: pd.DataFrame, brand: str, model: str, year: int, min_exact: int = 4
+) -> Dict[str, float]:
+    """Train-data-only market context for display and a conservative plausibility guardrail."""
+    split_col = model_df["split"] if "split" in model_df.columns else pd.Series(index=model_df.index, dtype=object)
+    train = model_df[split_col.eq("train")].copy()
+    if train.empty:
+        train = model_df.copy()
+    exact = compatibility_subset(train, brand, model, year)
+    scope = "model-year"
+    ref = exact
+    if len(ref) < min_exact:
+        ref = compatibility_subset(train, brand, model, None)
+        scope = "model"
+    prices = pd.to_numeric(ref[TARGET], errors="coerce").dropna() if TARGET in ref else pd.Series(dtype=float)
+    if prices.empty:
+        return {"count": 0, "scope": scope}
+    return {
+        "count": int(len(prices)),
+        "scope": scope,
+        "median": float(prices.median()),
+        "q10": float(prices.quantile(0.10)),
+        "q25": float(prices.quantile(0.25)),
+        "q75": float(prices.quantile(0.75)),
+        "q90": float(prices.quantile(0.90)),
+    }
+
+
+def apply_market_guardrail(raw_prediction: float, reference: Dict[str, float]) -> Tuple[float, bool]:
+    """Clip only clearly implausible predictions; leave ordinary predictions untouched.
+
+    Bounds are intentionally loose (0.75*q10 to 1.25*q90). The UI labels when
+    a guardrail was applied, so the raw model estimate remains auditable.
+    """
+    if not reference or int(reference.get("count", 0)) < 4:
+        return float(raw_prediction), False
+    lo = 0.75 * float(reference["q10"])
+    hi = 1.25 * float(reference["q90"])
+    guarded = float(np.clip(float(raw_prediction), lo, hi))
+    return guarded, not np.isclose(guarded, float(raw_prediction))
 
 
 def build_web_options(model_df: pd.DataFrame, reference_year: int) -> Dict:

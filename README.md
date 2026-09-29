@@ -24,6 +24,8 @@ CarValue_AI_Complete_Project/
 ├── artifacts/
 ├── models/
 ├── figures/
+├── assets/
+│   └── styles.css
 ├── app.py
 ├── requirements.txt
 └── run_all_notebooks.py
@@ -38,6 +40,35 @@ CarValue_AI_Complete_Project/
 5. `05_Evaluation_Error_Analysis_and_Model_Selection.ipynb` — MAE/RMSE/R²/RMSLE, tier/brand error, feature importance, final model selection.
 6. `06_Final_Model_Export_and_Web_Preparation.ipynb` — creates web dropdown options and verifies form-style prediction.
 7. `07_End_to_End_Smoke_Test.ipynb` — final delivery checks.
+
+
+## Version 2 — Web/demo fixes
+
+This package includes the corrected web demo requested after the first UI test:
+
+- **Model-aware form:** Brand → model → year → technical fields are filtered sequentially using combinations actually observed in the modeling data. Impossible cross-model combinations are no longer offered.
+- **EV handling:** engine displacement is always `NaN` for electric cars. The app displays `N/A — xe điện` instead of forcing values such as 2.0 L.
+- **Conservative target quality rule:** the repaired master dataset still retains every row for audit, but a listing is excluded from supervised modeling only if its price is more than 4× or less than 1/4 of the median for the same brand-model-year group with at least 4 observations. In this dataset this flags exactly **1** row.
+- **Plausibility guardrail:** the UI compares the raw model output against train-only price quantiles for the selected model/year. It only intervenes when a prediction is clearly outside a deliberately wide reference range, and the raw prediction remains visible for audit.
+- **Market context:** prediction panel displays comparable-listing count, train median, IQR and a simple data-support indicator.
+- **Redesigned UI:** Montserrat typography, responsive cards, cleaner spacing, custom HTML/CSS in `assets/styles.css`.
+
+Regression sanity check included in notebooks 06 and 07:
+
+```text
+VinFast VF3 Plus 2025, valid observed configuration
+raw prediction: ~242.9M VND
+train median:    ~239.5M VND
+reference n:     98
+```
+
+After the conservative modeling-data repair, the selected Random Forest test metrics are approximately:
+
+```text
+MAE  = 68.26 million VND
+RMSE = 202.18 million VND
+R²   = 0.9751
+```
 
 ## Install
 

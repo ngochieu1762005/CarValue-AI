@@ -1,9 +1,10 @@
 {
   "raw_rows": 23187,
-  "model_rows": 23187,
+  "model_rows": 23186,
   "reference_year": 2026,
   "recovered_price_rows": 3911,
   "remaining_missing_target": 0,
+  "price_outlier_rows_excluded_from_modeling": 1,
   "unique_vehicle_signatures": 18572,
   "rows_in_repeated_groups": 7600,
   "features": [
